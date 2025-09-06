@@ -1,28 +1,7 @@
 const express = require('express');
 const app = express();
 const morgan = require('morgan');
-const file = [
-    {
-        "id": "1",
-        "name": "Arto Hellas",
-        "number": "040-123456"
-    },
-    {
-        "id": "2",
-        "name": "Ada Lovelace",
-        "number": "39-44-5323523"
-    },
-    {
-        "id": "3",
-        "name": "Dan Abramov",
-        "number": "12-43-234345"
-    },
-    {
-        "id": "4",
-        "name": "Mary Poppendieck",
-        "number": "39-23-6423122"
-    }
-];
+const Person = require('./models/Person');
 
 app.use(express.json());
 app.use(express.static('dist'))
@@ -31,54 +10,56 @@ morgan.token('body', (req) => JSON.stringify(req.body))
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms :body'));
 
 app.get('/api/persons', (request, response) => {
-    response.json(file);
+    Person.find({}).then(result => {
+        response.json(result)
+    }
+    )
 })
 
 app.get('/info', (request, response) => {
     const now = new Date();
-    response.send(`
-        <p>Phonebook has info for ${file.length} people</p>
+    Person.find({}).then(result => {
+        response.send(`
+        <p>Phonebook has info for ${result.length} people</p>
         <p>${now}</p>
         `);
+    })
 })
 
-app.get('/api/persons/:id', (request, response) => {
-    const result = file.find(f => f.id === request.params.id);
-    if (result) {
-        response.send(result)
-    } else {
-        response.status(404).end()
-    }
+app.get('/api/persons/:id', (request, response, next) => {
+    Person.findById(request.params.id).then(result => {
+        if (result) {
+            response.send(result)
+        } else {
+            response.status(404).end()
+        }
+    }).catch(error => next(error))
 })
 
 app.delete('/api/persons/:id', (request, response) => {
-    const index = file.findIndex(f => f.id === request.params.id);
-    if (index !== -1) {
-        file.splice(index, 1)
-        response.status(204).end();
-    } else {
-        response.status(404).end()
-    }
+    Person.findByIdAndDelete(request.params.id).then(result => {
+        if (result) {
+            response.status(204).end();
+        } else {
+            response.status(404).end()
+        }
+    })
 })
 
-app.post('/api/persons', (request, response) => {
-    const id = Math.floor(Math.random() * 1000);
-    const newPerson = {
-        "id": id,
-        "name": request.body.name,
-        "number": request.body.number
-    }
+app.post('/api/persons', (request, response, next) => {
+    const newPerson = new Person({
+        name: request.body.name,
+        number: request.body.number
+    })
 
-    const validName = newPerson.name && !file.some(f => f.name === newPerson.name)
+    newPerson.save()
+        .then(result => response.json(result))
+        .catch(error => next(error))
+})
 
-    if (newPerson.id && validName) {
-        file.push(newPerson)
-        response.json(file)
-    } else {
-        response.status(400).json({
-            error: 'content missing'
-        })
-    }
+app.put('/api/persons/:id', (request, response) => {
+    const { name, number } = request.body
+    Person.findByIdAndUpdate(request.params.id, { name, number }, { runValidators: true }).then(updated => response.status(200).json(updated))
 })
 
 const PORT = process.env.PORT || 3001
@@ -86,3 +67,17 @@ const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 })
+
+const errorHandler = (error, request, response, next) => {
+    console.log(error.message)
+
+    if (error.name === 'CastError') {
+        return response.status(400).send({ error: 'malformatted' })
+    } else if (error.name === 'ValidationError') {
+        return response.status(400).send({ error: 'validation failed' })
+    } else {
+        return response.status(500).send({ error: 'unknownerror' })
+    }
+}
+
+app.use(errorHandler)

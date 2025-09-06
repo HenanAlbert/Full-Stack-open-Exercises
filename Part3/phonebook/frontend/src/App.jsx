@@ -97,6 +97,9 @@ const App = () => {
       create(newPerson)
         .then(response => {
           setPersons(prev => prev.concat({ ...response }))
+        })
+        .catch(error => {
+          setNotification(`Person validation failed: name: Path name (${name}) is shorter than the minimum allowed length (3).`)
         });
     }
     setNotification(`Added ${newPerson.name}`);
